@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF Password Cracker - Progress</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <div class="row justify-content-center">
+            <div class="col-md-10 col-lg-8">
+                <div class="card main-card">
+                    <div class="card-body">
+                        <div class="text-center mb-4">
+                            <i class="fas fa-cog fa-spin progress-icon" id="statusIcon"></i>
+                            <h1 class="card-title">Cracking in Progress</h1>
+                            <p class="text-muted" id="statusMessage">Testing passwords...</p>
+                        </div>
+
+                        <!-- Progress Bar -->
+                        <div class="progress-container mb-4">
+                            <div class="progress" style="height: 30px;">
+                                <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                                     role="progressbar" 
+                                     id="progressBar"
+                                     style="width: 0%">
+                                    <span id="progressText">0%</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Current Status -->
+                        <div class="row mb-4">
+                            <div class="col-md-6">
+                                <div class="info-card">
+                                    <h6><i class="fas fa-key me-2"></i>Current Password</h6>
+                                    <div class="current-password" id="currentPassword">Starting...</div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="info-card">
+                                    <h6><i class="fas fa-chart-line me-2"></i>Progress</h6>
+                                    <div class="progress-info">
+                                        <span id="currentCount">0</span> / <span id="totalCount">126</span> passwords tested
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Result Section (hidden initially) -->
+                        <div id="resultSection" class="result-section" style="display: none;">
+                            <div id="successResult" class="alert alert-success" style="display: none;">
+                                <h5><i class="fas fa-check-circle me-2"></i>Password Found!</h5>
+                                <p class="mb-2">The correct password is:</p>
+                                <div class="password-result" id="foundPassword"></div>
+                            </div>
+
+                            <div id="errorResult" class="alert alert-danger" style="display: none;">
+                                <h5><i class="fas fa-exclamation-triangle me-2"></i>Error</h5>
+                                <p id="errorMessage"></p>
+                            </div>
+
+                            <div id="failedResult" class="alert alert-warning" style="display: none;">
+                                <h5><i class="fas fa-times-circle me-2"></i>No Password Found</h5>
+                                <p>Unable to crack the password using the name-based pattern. This could mean:</p>
+                                <ul class="mb-0">
+                                    <li>The password doesn't follow the expected pattern</li>
+                                    <li>The first name provided doesn't match the one used for the password</li>
+                                    <li>The password uses a different format or additional characters</li>
+                                </ul>
+                            </div>
+        </div>
+
+                        <!-- Action Buttons -->
+                        <div class="d-grid gap-2 d-md-flex justify-content-md-center">
+                            <button type="button" class="btn btn-secondary" id="stopBtn" style="display: none;">
+                                <i class="fas fa-stop me-2"></i>Stop Process
+                            </button>
+                            <a href="{{ url_for('reset') }}" class="btn btn-primary" id="tryAgainBtn" style="display: none;">
+                                <i class="fas fa-redo me-2"></i>Try Again
+                            </a>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tips Section -->
+                <div class="card mt-4">
+                    <div class="card-body">
+                        <h5><i class="fas fa-lightbulb me-2"></i>Tips for Better Results:</h5>
+                        <ul class="tips-list">
+                            <li>Make sure you enter the exact first name used when creating the password</li>
+                            <li>The pattern tested is: First 4 letters (uppercase) + Year (1900-2025)</li>
+                            <li>If your name is shorter than 4 letters, it will be padded with 'X'</li>
+                            <li>This tool only works for passwords following the specific name+year pattern</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Progress tracking variables
+        let progressInterval;
+        let isCompleted = false;
+
+        // Start progress tracking
+        function startProgressTracking() {
+            progressInterval = setInterval(updateProgress, 1000); // Update every second
+            updateProgress(); // Initial update
+        }
+
+        // Update progress from server
+        function updateProgress() {
+            fetch('/api/progress')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        showError('Session expired or invalid');
+                        return;
+                    }
+
+                    // Update progress bar
+                    const progressPercent = Math.round((data.progress / data.total_passwords) * 100);
+                    const progressBar = document.getElementById('progressBar');
+                    const progressText = document.getElementById('progressText');
+                    
+                    progressBar.style.width = progressPercent + '%';
+                    progressText.textContent = progressPercent + '%';
+
+                    // Update current password
+                    document.getElementById('currentPassword').textContent = data.current_password || 'Initializing...';
+                    
+                    // Update counters
+                    document.getElementById('currentCount').textContent = data.progress;
+                    document.getElementById('totalCount').textContent = data.total_passwords;
+
+                    // Handle completion
+                    if (data.completed && !isCompleted) {
+                        isCompleted = true;
+                        clearInterval(progressInterval);
+                        handleCompletion(data);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error updating progress:', error);
+                });
+        }
+
+        // Handle completion of cracking process
+        function handleCompletion(data) {
+            const statusIcon = document.getElementById('statusIcon');
+            const statusMessage = document.getElementById('statusMessage');
+            const resultSection = document.getElementById('resultSection');
+            const tryAgainBtn = document.getElementById('tryAgainBtn');
+
+            resultSection.style.display = 'block';
+            tryAgainBtn.style.display = 'inline-block';
+
+            if (data.status === 'success' && data.found_password) {
+                // Success
+                statusIcon.className = 'fas fa-check-circle success-icon';
+                statusMessage.textContent = 'Password found successfully!';
+                
+                document.getElementById('successResult').style.display = 'block';
+                document.getElementById('foundPassword').textContent = data.found_password;
+                
+                // Update progress bar to success
+                const progressBar = document.getElementById('progressBar');
+                progressBar.className = 'progress-bar bg-success';
+                progressBar.textContent = 'Success!';
+                
+            } else if (data.status === 'failed') {
+                // Failed to find password
+                statusIcon.className = 'fas fa-times-circle error-icon';
+                statusMessage.textContent = 'Password not found';
+                
+                document.getElementById('failedResult').style.display = 'block';
+                
+                // Update progress bar to warning
+                const progressBar = document.getElementById('progressBar');
+                progressBar.className = 'progress-bar bg-warning';
+                progressBar.textContent = 'Complete - No Match';
+                
+            } else if (data.status === 'error') {
+                // Error occurred
+                statusIcon.className = 'fas fa-exclamation-triangle error-icon';
+                statusMessage.textContent = 'An error occurred';
+                
+                document.getElementById('errorResult').style.display = 'block';
+                document.getElementById('errorMessage').textContent = data.error || 'Unknown error occurred';
+                
+                // Update progress bar to danger
+                const progressBar = document.getElementById('progressBar');
+                progressBar.className = 'progress-bar bg-danger';
+                progressBar.textContent = 'Error';
+            }
+        }
+
+        // Show error message
+        function showError(message) {
+            const statusIcon = document.getElementById('statusIcon');
+            const statusMessage = document.getElementById('statusMessage');
+            
+            statusIcon.className = 'fas fa-exclamation-triangle error-icon';
+            statusMessage.textContent = message;
+            
+            document.getElementById('tryAgainBtn').style.display = 'inline-block';
+            clearInterval(progressInterval);
+        }
+
+        // Start tracking when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            startProgressTracking();
+        });
+
+        // Clean up interval when page unloads
+        window.addEventListener('beforeunload', function() {
+            if (progressInterval) {
+                clearInterval(progressInterval);
+            }
+        });
+    </script>
+</body>
+</html>
